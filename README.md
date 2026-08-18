@@ -12,6 +12,6 @@ Sources for a future agent: `C:\Amogh-Saanvi-College\SAANVI-DASHBOARD-SOURCES.md
 
 The vault now lives in Saanvi's Google Drive folder, not on the local PC.
 
-Every page load, browser refresh, and the blue **Refresh** button reloads **Tasks** and **Documents Needed** from the application-plan spreadsheet, and reloads the live G-Drive folder listing. The spreadsheet is shared as anyone-with-link so this static site can read it — there is no Google key in the page. Universities, aid, people, and the gantt still come from the committed JS files.
+Every page load, browser refresh, and the blue **Refresh** button reloads **Tasks** and **Documents Needed** from the application-plan spreadsheet, and rebuilds the G-Drive file tree from the live vault (markdown notes stay hidden). The spreadsheet is shared as anyone-with-link so this static site can read it — there is no Google key in the page. Universities, aid, people, and the gantt still come from the committed JS files.
 
 Edit `js/data.js` only for those remaining static pages, or as a fallback if Refresh cannot reach the sheet.

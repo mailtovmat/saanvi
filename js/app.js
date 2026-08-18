@@ -27,6 +27,7 @@
     tasksSheet: "Tasks",
     docsSheet: "Documents Needed",
     cacheKey: "saanvi.plan.v1",
+    driveCacheKey: "saanvi.gdrive.v1",
     driveRoot: "1oOyuDasMra4G_DoRRc6lDLAOOM_MS8dR",
     driveHref: "https://drive.google.com/drive/folders/1oOyuDasMra4G_DoRRc6lDLAOOM_MS8dR"
   };
@@ -43,7 +44,7 @@
     planMeta: null,
     refreshErr: null,
     refreshing: false,
-    driveStamp: Date.now()
+    gdrive: null
   };
   let refreshInFlight = false;
 
@@ -388,6 +389,130 @@
       localStorage.setItem(PLAN.cacheKey, JSON.stringify({ tasks, docs, meta }));
     } catch (e) { /* private mode / quota */ }
   }
+  function applyDrive(payload) {
+    if (payload && Array.isArray(payload.tree)) state.gdrive = payload;
+  }
+  function loadDriveCache() {
+    try {
+      const raw = localStorage.getItem(PLAN.driveCacheKey);
+      if (!raw) return;
+      const c = JSON.parse(raw);
+      if (c && Array.isArray(c.tree)) applyDrive(c);
+    } catch (e) { /* keep shipped gdrive-data.js */ }
+  }
+  function saveDriveCache(payload) {
+    try { localStorage.setItem(PLAN.driveCacheKey, JSON.stringify(payload)); }
+    catch (e) { /* private mode / quota */ }
+  }
+  function skipDriveName(name) {
+    const lower = String(name || "").toLowerCase();
+    return !lower || lower === ".keep" || lower === "config-keys.txt" || lower.endsWith(".md");
+  }
+  function driveKind(name, href, folder) {
+    if (folder) return "Folder";
+    const n = String(name || "").toLowerCase();
+    if (n.endsWith(".xlsx") || n.endsWith(".xls") || n.endsWith(".csv") || /spreadsheet/.test(href || "")) return "Spreadsheet";
+    if (n.endsWith(".docx") || n.endsWith(".doc")) return "Word";
+    if (n.endsWith(".html") || n.endsWith(".htm")) return "HTML";
+    if (n.endsWith(".pdf")) return "PDF";
+    if (/\.(png|jpe?g|gif|webp)$/.test(n)) return "Image";
+    return "File";
+  }
+  function cleanDriveName(raw) {
+    return String(raw || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+  }
+  function parseDriveFolderPage(text) {
+    const items = [];
+    const lines = String(text || "").split(/\r?\n/);
+    const hrefRe = /\((https:\/\/(?:drive|docs)\.google\.com\/(?:drive\/folders|file\/d|spreadsheets\/d|document\/d)\/[a-zA-Z0-9_-]+[^)]*)\)/g;
+    for (let i = 0; i < lines.length; i++) {
+      hrefRe.lastIndex = 0;
+      let m;
+      while ((m = hrefRe.exec(lines[i]))) {
+        const href = m[1];
+        const name = cleanDriveName(lines[i].slice(0, m.index)).replace(/^\[/, "").replace(/\]$/, "").trim();
+        if (!name || name === "TITLE") continue;
+        let updated = "—";
+        for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+          const t = lines[j].trim();
+          if (!t) continue;
+          if (t.startsWith("[") || t.startsWith("![")) break;
+          updated = t;
+          break;
+        }
+        const folder = /\/folders\//.test(href);
+        const idm = /\/(?:folders|d)\/([a-zA-Z0-9_-]+)/.exec(href);
+        items.push({
+          name, href, folder,
+          id: idm ? idm[1] : "",
+          kind: driveKind(name, href, folder),
+          updated
+        });
+      }
+    }
+    return items;
+  }
+  async function fetchDriveFolderText(id) {
+    const src = "https://drive.google.com/embeddedfolderview?id=" + encodeURIComponent(id);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const res = await fetch("https://r.jina.ai/" + src, { signal: ctrl.signal, referrerPolicy: "origin" });
+      if (!res.ok) throw new Error("Could not read the Drive folder.");
+      return await res.text();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async function mapPool(items, limit, fn) {
+    const out = new Array(items.length);
+    let i = 0;
+    async function worker() {
+      while (i < items.length) {
+        const idx = i++;
+        out[idx] = await fn(items[idx]);
+      }
+    }
+    const n = Math.max(1, Math.min(limit, items.length || 1));
+    await Promise.all(Array.from({ length: items.length ? n : 0 }, worker));
+    return out;
+  }
+  async function walkDriveFolder(folderId, seen) {
+    if (seen.has(folderId)) return [];
+    seen.add(folderId);
+    const items = parseDriveFolderPage(await fetchDriveFolderText(folderId));
+    const files = [];
+    const folders = [];
+    items.forEach(item => {
+      if (skipDriveName(item.name)) return;
+      if (item.folder && item.id) folders.push(item);
+      else if (!item.folder) files.push(Object.assign({}, item, { children: [] }));
+    });
+    const nested = await mapPool(folders, 4, async folder => {
+      const children = await walkDriveFolder(folder.id, seen);
+      if (!children.length) return null;
+      return {
+        name: folder.name, kind: "Folder", folder: true,
+        updated: folder.updated, href: folder.href, children
+      };
+    });
+    const nodes = files.concat(nested.filter(Boolean));
+    nodes.sort((a, b) => (a.folder === b.folder ? a.name.localeCompare(b.name) : a.folder ? -1 : 1));
+    return nodes;
+  }
+  function countDriveFiles(nodes) {
+    return (nodes || []).reduce((n, node) => n + (node.folder ? countDriveFiles(node.children) : 1), 0);
+  }
+  async function fetchDriveListing() {
+    const tree = await walkDriveFolder(PLAN.driveRoot, new Set());
+    return {
+      rootName: "Saanvi",
+      rootHref: PLAN.driveHref,
+      fetched: planWhenLabel(),
+      fileCount: countDriveFiles(tree),
+      tree
+    };
+  }
   function planWhenLabel() {
     return new Intl.DateTimeFormat("en-GB", {
       timeZone: DATA.tz, day: "numeric", month: "short", year: "numeric",
@@ -402,12 +527,17 @@
     const btn = document.querySelector("[data-refresh]");
     if (btn) { btn.setAttribute("aria-busy", "true"); btn.textContent = "Refreshing…"; }
     try {
-      const [taskTable, docTable] = await Promise.all([
+      const [taskRes, docRes, driveRes] = await Promise.allSettled([
         gvizTable(PLAN.tasksSheet),
-        gvizTable(PLAN.docsSheet)
+        gvizTable(PLAN.docsSheet),
+        fetchDriveListing()
       ]);
-      const tasks = tasksFromSheet(tableRows(taskTable));
-      const docs = docsFromSheet(tableRows(docTable));
+      if (taskRes.status !== "fulfilled" || docRes.status !== "fulfilled") {
+        throw new Error((taskRes.reason && taskRes.reason.message) ||
+          (docRes.reason && docRes.reason.message) || "Could not read application-plan.");
+      }
+      const tasks = tasksFromSheet(tableRows(taskRes.value));
+      const docs = docsFromSheet(tableRows(docRes.value));
       if (!tasks.length && !docs.length) {
         throw new Error("The Tasks and Documents Needed tabs came back empty. Nothing was changed.");
       }
@@ -419,7 +549,14 @@
       };
       applyPlan(tasks, docs, meta);
       savePlanCache(tasks, docs, meta);
-      state.driveStamp = Date.now();
+      if (driveRes.status === "fulfilled") {
+        applyDrive(driveRes.value);
+        saveDriveCache(driveRes.value);
+        meta.drive = driveRes.value.fileCount;
+        state.planMeta = meta;
+      } else if (!state.gdrive && typeof GDRIVE === "undefined") {
+        state.refreshErr = (driveRes.reason && driveRes.reason.message) || "Drive listing could not be refreshed.";
+      }
     } catch (err) {
       state.refreshErr = (err && err.message) || "Refresh failed.";
     }
@@ -432,7 +569,8 @@
       return `<div class="refresh-status is-err" role="status">Refresh failed: ${esc(state.refreshErr)} The <a href="${esc(PLAN.editUrl)}" target="_blank" rel="noopener noreferrer">application-plan</a> file must stay shared as <em>Anyone with the link can view</em>.</div>`;
     }
     if (state.planMeta) {
-      return `<div class="refresh-status" role="status">Showing ${esc(state.planMeta.source)} · ${state.planMeta.tasks} tasks · ${state.planMeta.docs} documents · ${esc(state.planMeta.when)}</div>`;
+      const driveBit = state.planMeta.drive != null ? ` · Drive ${state.planMeta.drive} files` : "";
+      return `<div class="refresh-status" role="status">Showing ${esc(state.planMeta.source)} · ${state.planMeta.tasks} tasks · ${state.planMeta.docs} documents${driveBit} · ${esc(state.planMeta.when)}</div>`;
     }
     return "";
   }
@@ -1048,16 +1186,20 @@
   }
 
   function renderGdrive() {
-    const liveSrc = "https://drive.google.com/embeddedfolderview?id=" + encodeURIComponent(PLAN.driveRoot) +
-      "&t=" + encodeURIComponent(String(state.driveStamp)) + "#list";
+    const G = state.gdrive || ((typeof GDRIVE !== "undefined") ? GDRIVE : {tree:[], fileCount:0, fetched:"—", rootHref:PLAN.driveHref, rootName:"Saanvi"});
     return `<div class="stack">
-      <div class="note">Live listing of the Saanvi Google Drive vault. Opening this page or clicking <strong>Refresh</strong> reloads it from Drive. <a href="${esc(PLAN.driveHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
+      <div class="note">Listing of the Saanvi Google Drive vault. Markdown notes are hidden. Updated ${esc(G.fetched)}. <a href="${esc(G.rootHref || PLAN.driveHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
       <div class="card">
         <div class="card-head">
           <h2>G-Drive</h2>
-          <span class="label">Live from Drive</span>
+          <span class="label">${G.fileCount} file${G.fileCount===1?"":"s"} · folders shown only when they hold a visible file</span>
         </div>
-        <iframe class="drive-live" title="Saanvi Google Drive vault" src="${esc(liveSrc)}"></iframe>
+        <div class="drive-head">
+          <div class="caption">Name</div>
+          <div class="caption">Kind</div>
+          <div class="caption">Last updated</div>
+        </div>
+        ${G.tree && G.tree.length ? driveRows(G.tree, 0) : `<div class="label" style="padding:14px 12px">No non-markdown files in the vault yet.</div>`}
       </div>
     </div>`;
   }
@@ -1191,6 +1333,7 @@
     const t = parse(todayStr());
     if (t) { state.calYear = t.getFullYear(); state.calMonth = t.getMonth(); }
     loadPlanCache();
+    loadDriveCache();
     if (DATA.PUBLIC) {
       DATA.tasks.forEach(t => { if (t.why) t.why = t.why.replace(/1510/g, "the score on file"); });
     }

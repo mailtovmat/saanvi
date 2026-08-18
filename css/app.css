@@ -366,10 +366,6 @@ footer p { margin-top: 8px; text-transform: none; letter-spacing: 0; font-weight
 .grow { flex: 1; min-width: 0; }
 .nowrap { white-space: nowrap; }
 
-.drive-live {
-  display: block; width: 100%; min-height: 720px; border: 0;
-  background: #fff; border-radius: 8px;
-}
 .drive-head, .drive-row {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) 140px 190px;
