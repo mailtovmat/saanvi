@@ -5,10 +5,10 @@
     {id:"applications", href:"applications.html", label:"Applications"},
     {id:"progress", href:"progress.html", label:"Progress"},
     {id:"calendar", href:"calendar.html", label:"Calendar"},
-    {id:"people", href:"people.html", label:"People"},
     {id:"docs", href:"docs.html", label:"Docs"},
     {id:"gdrive", href:"gdrive.html", label:"G-Drive"},
-    {id:"financial", href:"financial.html", label:"Financial Aid"}
+    {id:"financial", href:"financial.html", label:"Financial Aid"},
+    {id:"people", href:"people.html", label:"People"}
   ];
 
   const MARK_COLOR = {Yes:"#0a0a0a", add:"#2f6feb", unsure:"#d4a017", review:"#8a8a8a"};
@@ -620,105 +620,74 @@
     function push(ds, ev) { (map[ds] = map[ds] || []).push(ev); }
     DATA.tasks.forEach(t => {
       if (!t.due) return;
-      push(t.due, {title:t.t, done:t.status==="done", overdue:t.status!=="done" && daysUntil(t.due)<0, track:t.college==="UK"?"uk":"us"});
+      push(t.due, {
+        title:t.t, detail:t.why||"", owner:ownerName(t.owner),
+        done:t.status==="done", overdue:t.status!=="done" && daysUntil(t.due)<0,
+        track:t.college==="UK"?"uk":"us", hard:!!t.hard, kind:"Task", id:t.id
+      });
     });
     DATA.events.forEach(e => {
-      push(e.d, {title:e.short||e.l, done:false, overdue:daysUntil(e.d)<0, track:e.track, hard:e.hard});
+      push(e.d, {
+        title:e.l, detail:e.note||"", owner:e.tz||"",
+        done:false, overdue:daysUntil(e.d)<0, track:e.track, hard:!!e.hard, kind:"Deadline"
+      });
     });
     return map;
   }
 
-  function monthCalendar() {
-    const y = state.calYear, m = state.calMonth;
+  function pillStyle(e) {
+    if (e.done) return "background:var(--n-100);color:var(--n-400);text-decoration:line-through";
+    if (e.track==="uk") return "background:var(--n-400);color:#fff";
+    if (e.hard || e.overdue) return "background:var(--ink);color:#fff";
+    return "background:#fff;color:var(--ink);border:1px solid var(--n-300)";
+  }
+
+  function monthCalendar(y, m) {
     const startDay = new Date(y,m,1).getDay();
     const dim = new Date(y,m+1,0).getDate();
     const evs = eventsByDate();
     const wd = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const cells = [];
-    for (let i=0;i<startDay;i++) cells.push(`<div></div>`);
+    for (let i=0;i<startDay;i++) cells.push(`<div class="cal-pad"></div>`);
     for (let d=1; d<=dim; d++) {
       const ds = `${y}-${pad(m+1)}-${pad(d)}`;
       const list = evs[ds] || [];
       const isToday = ds === todayStr();
-      const pills = list.slice(0,2).map(e => {
-        let st;
-        if (e.done) st = "background:var(--n-100);color:var(--n-400);text-decoration:line-through";
-        else if (e.track==="uk") st = "background:var(--n-400);color:#fff";
-        else if (e.hard || e.overdue) st = "background:var(--ink);color:#fff";
-        else st = "background:#fff;color:var(--ink);border:1px solid var(--n-300)";
-        return `<div class="pill-ev" style="${st}">${esc(e.title)}</div>`;
-      });
-      if (list.length > 2) pills.push(`<div class="label" style="font-size:10px;padding-left:3px">+${list.length-2}</div>`);
-      cells.push(`<div class="cal-cell${isToday?" today":""}"><div class="cal-num">${d}</div>${pills.join("")}</div>`);
+      const pills = list.slice(0,3).map(e => `<div class="pill-ev" style="${pillStyle(e)}">${esc(e.title)}</div>`);
+      if (list.length > 3) pills.push(`<div class="label" style="font-size:10px;padding-left:3px">+${list.length-3} more — click</div>`);
+      if (!list.length) {
+        cells.push(`<div class="cal-cell${isToday?" today":""}"><div class="cal-num">${d}</div></div>`);
+        continue;
+      }
+      const body = list.map(e => `
+        <div class="cal-expand-item">
+          <div style="font-weight:700;font-size:13px">${esc(e.title)}</div>
+          <div class="label">${esc(e.kind)}${e.owner?" · "+esc(e.owner):""}${e.hard?" · hard cutoff":""}${e.overdue?" · overdue":""}${e.done?" · done":""}</div>
+          ${e.detail?`<div style="margin-top:4px;font-size:13px;color:var(--ink-soft)">${esc(e.detail)}</div>`:""}
+        </div>`).join("");
+      cells.push(`<details class="cal-cell has-ev${isToday?" today":""}">
+        <summary><div class="cal-num">${d}</div>${pills.join("")}</summary>
+        <div class="cal-expand">${body}</div>
+      </details>`);
     }
-    return `<div>
+    return `<div class="cal-month">
       <div class="cal-head">${wd.map(d=>`<div class="cal-wd">${d}</div>`).join("")}</div>
       <div class="cal-grid">${cells.join("")}</div>
     </div>`;
   }
 
   function renderCalendar() {
-    const monthLabel = new Date(state.calYear, state.calMonth, 1).toLocaleDateString("en-US",{month:"long", year:"numeric"});
-    const agenda = DATA.tasks.slice().sort((a,b) => parse(a.due)-parse(b.due)).map(t => {
-      const b = badge(t.due, t.status==="done");
-      return {t, b};
-    });
-    const dated = DATA.events.slice().sort((a,b)=>parse(a.d)-parse(b.d));
+    const months = [7,8,9,10,11]; // Aug–Dec 2026
     return `<div class="stack">
       ${renderLaneTimeline()}
-      <div style="display:flex;flex-wrap:wrap;gap:var(--s-4);align-items:start">
-        <div class="card" style="flex:2 1 340px">
-          <div class="card-head">
-            <h2>${esc(monthLabel)}</h2>
-            <div style="display:flex;gap:8px">
-              <button class="navbtn" data-cal="-1" aria-label="Previous month">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-              </button>
-              <button class="navbtn" data-cal="1" aria-label="Next month">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-              </button>
-            </div>
-          </div>
-          ${monthCalendar()}
-        </div>
-        <div class="card" style="flex:1 1 260px">
-          <h2 style="margin-bottom:4px">Agenda</h2>
-          <span class="label">Vault tasks, chronological</span>
-          <div style="margin-top:12px">${agenda.map(({t,b}) => `
-            <div class="row">
-              <div class="daybox" style="width:40px">
-                <div class="n" style="font-size:16px${t.status==="done"?";color:var(--n-400)":""}">${parse(t.due).getDate()}</div>
-                <div class="caption">${mon(t.due)}</div>
-              </div>
-              <div class="grow">
-                <div style="font-weight:600;font-size:14px${t.status==="done"?";text-decoration:line-through;color:var(--n-400)":""}">${esc(t.t)}</div>
-                <div class="label">${esc(ownerName(t.owner))}</div>
-              </div>
-              <span class="${b.cls}">${esc(b.rel)}</span>
-            </div>`).join("")}</div>
-        </div>
-      </div>
-      <div class="card">
-        <h2 style="margin-bottom:var(--s-4)">Every dated item</h2>
-        <div class="tbwrap"><table>
-          <thead><tr>
-            <th class="caption">Date (IST)</th><th class="caption">Days</th><th class="caption">Item</th>
-            <th class="caption">Track</th><th class="caption">Authoritative time</th><th class="caption">Hard?</th>
-          </tr></thead>
-          <tbody>${dated.map(e => {
-            const dd = daysUntil(e.d);
-            const lane = (DATA.lanes.find(l => l.k===e.track)||{}).n || e.track;
-            return `<tr${e.track==="uk"?' class="dim"':""}>
-              <td class="num">${fmt(e.d)}</td>
-              <td class="num">${dd<0?"past":"in "+dd+"d"}</td>
-              <td>${esc(e.l)}${e.note?`<div class="label">${esc(e.note)}</div>`:""}</td>
-              <td>${esc(lane)}</td>
-              <td class="label">${esc(e.tz)}</td>
-              <td>${e.hard?'<span class="badge badge-over">hard</span>':'<span class="badge badge-ghost">target</span>'}</td>
-            </tr>`;
-          }).join("")}</tbody>
-        </table></div>
-      </div>
+      <div class="note">Click a day with items to expand and read the full text. Vault tasks also live on the <strong>Tasks</strong> tab of the application-plan spreadsheet.</div>
+      ${months.map(m => {
+        const label = new Date(2026, m, 1).toLocaleDateString("en-US",{month:"long", year:"numeric"});
+        return `<div class="card">
+          <div class="card-head"><h2>${esc(label)}</h2><span class="label">Click a dated day to expand</span></div>
+          ${monthCalendar(2026, m)}
+        </div>`;
+      }).join("")}
     </div>`;
   }
 
