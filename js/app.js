@@ -2,11 +2,11 @@
 (function () {
   const PAGES = [
     {id:"overview", href:"index.html", label:"Dashboard"},
-    {id:"applications", href:"applications.html", label:"Applications"},
     {id:"progress", href:"progress.html", label:"Progress"},
     {id:"calendar", href:"calendar.html", label:"Calendar"},
-    {id:"docs", href:"docs.html", label:"Docs"},
+    {id:"docs", href:"docs.html", label:"Docs-status"},
     {id:"gdrive", href:"gdrive.html", label:"G-Drive"},
+    {id:"applications", href:"applications.html", label:"Universities"},
     {id:"financial", href:"financial.html", label:"Financial Aid"},
     {id:"people", href:"people.html", label:"People"}
   ];
@@ -211,6 +211,7 @@
       </header>
       <nav class="tabs" aria-label="Sections">
         ${PAGES.map(p => `<a class="tabbtn" href="${p.href}" ${p.id===state.page?'aria-current="page"':""}>${p.label}</a>`).join("")}
+        <button type="button" class="tabbtn refresh-btn" disabled title="Refresh — will reload spreadsheet sources. Not wired yet.">Refresh</button>
       </nav>
       ${inner}
       <footer>
@@ -243,11 +244,6 @@
       {value: overdue.length, label:"Overdue tasks", hint:`${soon.length} due within 2 weeks`},
       {value: add.length + unsure.length, label:"Still undecided", hint:`${add.length} add · ${unsure.length} unsure · cut by 31 Aug`}
     ];
-
-    const deadlineItems = open
-      .map(t => ({due:t.due, title:t.t, college:t.college, done:false, overdue: daysUntil(t.due) < 0 || !!t.overdueFrom}))
-      .sort((a,b) => parse(a.due) - parse(b.due))
-      .slice(0, 8);
 
     return `<div class="stack">
       <div class="note">${DATA.notes && DATA.notes.overview ? DATA.notes.overview : ""}</div>
@@ -290,83 +286,65 @@
           <div class="label" style="text-align:center;margin-top:12px">${planDone} of ${planTot} vault tasks resolved · ${overdue.length} overdue</div>
         </div>
       </div>
-      <div class="card">
-        <div class="card-head">
-          <h2>Deadlines</h2>
-          <span class="label">Overdue &amp; upcoming, from the vault — not from a sample file</span>
-        </div>
-        ${deadlineItems.map(item => {
-          const b = badge(item.due, false);
-          return `<div class="row">
-            <div class="accent" style="background:${item.overdue?"var(--ink)":"transparent"}"></div>
-            <div class="daybox">
-              <div class="n">${parse(item.due).getDate()}</div>
-              <div class="caption" style="margin-top:2px">${mon(item.due)}</div>
-            </div>
-            <div class="grow">
-              <div style="font-weight:600;font-size:15px">${esc(item.title)}</div>
-              <div class="label">${esc(item.college === "General" ? "General" : item.college)}</div>
-            </div>
-            <span class="${b.cls}">${esc(b.rel)}</span>
-          </div>`;
-        }).join("")}
-      </div>
-      ${taskLists()}
+      ${dueBuckets()}
     </div>`;
   }
 
-  function taskLists() {
-    const vis = t => state.owner === "all" || t.owner === state.owner;
-    const open = DATA.tasks.filter(t => t.status !== "done" && vis(t));
-    const over = open.filter(t => t.overdueFrom || daysUntil(t.due) < 0);
-    const soon = open.filter(t => !over.includes(t) && t.status !== "blocked" && daysUntil(t.due) <= 14);
-    const later = open.filter(t => !over.includes(t) && !soon.includes(t));
-    const done = DATA.tasks.filter(t => t.status === "done" && vis(t));
-    const owners = [["all","All"],["parent","Father"],[DATA.studentOwner || "student", DATA.studentName]];
-    function block(title, arr) {
+  function planItems() {
+    const tasks = DATA.tasks.map(t => ({
+      title: t.t, due: t.due, source: "Tasks", owner: t.owner, status: t.status,
+      why: t.why, pct: t.status === "done" ? 100 : 0, hard: !!t.hard, overdueFrom: t.overdueFrom
+    }));
+    const docs = (DATA.docs || []).map(d => ({
+      title: d.name, due: d.due, source: "documents needed", owner: null,
+      status: d.done ? "done" : "todo", why: d.note, pct: d.pct == null ? (d.done ? 100 : 0) : d.pct,
+      hard: false, overdueFrom: null
+    }));
+    return tasks.concat(docs);
+  }
+
+  function dueBuckets() {
+    const items = planItems().filter(i => i.status !== "done" && i.due);
+    const over = items.filter(i => i.overdueFrom || daysUntil(i.due) < 0);
+    const thisWeek = items.filter(i => !over.includes(i) && daysUntil(i.due) >= 0 && daysUntil(i.due) <= 7);
+    const nextWeek = items.filter(i => daysUntil(i.due) >= 8 && daysUntil(i.due) <= 14);
+    const next2 = items.filter(i => daysUntil(i.due) >= 15 && daysUntil(i.due) <= 28);
+    function block(title, hint, arr) {
       return `<div class="card">
-        <div class="card-head"><h2>${title}</h2><span class="label">${arr.length}</span></div>
-        ${arr.length ? arr.sort((a,b)=>parse(a.due)-parse(b.due)).map(taskRow).join("") :
+        <div class="card-head"><h2>${title}</h2><span class="label">${arr.length} · ${hint}</span></div>
+        ${arr.length ? arr.sort((a,b)=>parse(a.due)-parse(b.due)).map(dueRow).join("") :
           `<div class="label" style="padding:8px 0">Nothing here.</div>`}
       </div>`;
     }
     return `
-      <div class="filters" style="align-items:center">
-        <span class="caption">Owner</span>
-        ${owners.map(([v,l]) => `<button class="chip" data-owner="${v}" aria-pressed="${state.owner===v}">${l}</button>`).join("")}
-        <button class="chip" data-done="1" aria-pressed="${state.showDone}">${state.showDone?"Hide resolved":"Show resolved"}</button>
-      </div>
-      ${block("Overdue", over)}
-      ${block("Next 14 days", soon)}
-      ${block("Later & blocked", later)}
-      ${state.showDone ? block("Resolved", done) : ""}`;
+      <div class="note">Due-by lists come from the <strong>application-plan</strong> spreadsheet: <em>Tasks</em> and <em>documents needed</em>.</div>
+      ${block("Overdue", "past due", over)}
+      ${block("This week", "due in 0–7 days", thisWeek)}
+      ${block("Next week", "due in 8–14 days", nextWeek)}
+      ${block("Next 2 weeks", "due in 15–28 days", next2)}`;
   }
 
-  function taskRow(t) {
-    const dd = daysUntil(t.due);
-    const isOver = t.status !== "done" && (t.overdueFrom || dd < 0);
-    const b = t.status === "done" ? {rel:"resolved", cls:"badge badge-done"}
-      : t.status === "blocked" ? {rel:"blocked / parked", cls:"badge badge-ghost"}
-      : isOver ? {rel:"overdue", cls:"badge badge-over"}
-      : dd <= 7 ? {rel:"this week", cls:"badge badge-soon"}
-      : {rel:"scheduled", cls:"badge badge-ghost"};
-    const late = t.status === "done" ? "—"
-      : isOver ? (t.overdueFrom ? Math.abs(daysUntil(t.overdueFrom))+"d late" : Math.abs(dd)+"d late")
-      : "in "+dd+"d";
+  function dueRow(i) {
+    const dd = daysUntil(i.due);
+    const isOver = i.overdueFrom || dd < 0;
     return `<div class="row" style="align-items:flex-start">
-      <div class="markbox ${t.status==="done"?"on":""}" aria-hidden="true"></div>
+      <div class="daybox">
+        <div class="n">${parse(i.due).getDate()}</div>
+        <div class="caption" style="margin-top:2px">${mon(i.due)}</div>
+      </div>
       <div class="grow">
-        <div style="font-weight:600;font-size:14px${t.status==="done"?";text-decoration:line-through;color:var(--n-400)":""}">${esc(t.t)}${t.hard?' <span class="badge badge-over" style="margin-left:6px">hard cutoff</span>':""}</div>
+        <div style="font-weight:600;font-size:14px">${esc(i.title)}</div>
         <div class="label" style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <span class="badge badge-ghost">${esc(ownerName(t.owner))}</span>
-          <span class="${b.cls}">${b.rel}</span>
-          <span class="mono" style="font-size:11px;color:var(--n-400)">${esc(t.id)}</span>
+          <span class="badge badge-ghost">${esc(i.source)}</span>
+          ${i.owner?`<span class="badge badge-ghost">${esc(ownerName(i.owner))}</span>`:""}
+          ${i.hard?'<span class="badge badge-over">hard</span>':""}
         </div>
-        <div class="label" style="margin-top:4px;max-width:78ch">${esc(t.why||"")}</div>
+        <div class="label" style="margin-top:4px;max-width:78ch">${esc(i.why||"")}</div>
       </div>
       <div style="text-align:right;white-space:nowrap">
-        <div class="label">${fmt(t.due)}</div>
-        <div style="font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums;color:${isOver?"var(--ink)":"var(--n-400)"}">${late}</div>
+        <div class="label">${fmt(i.due)}</div>
+        <div style="font-size:12.5px;font-weight:650">${isOver?(Math.abs(dd)+"d late"):"in "+dd+"d"}</div>
+        <div class="label">${i.pct}%</div>
       </div>
     </div>`;
   }
@@ -387,7 +365,7 @@
       <div class="note">${DATA.notes && DATA.notes.applications ? DATA.notes.applications : ""}</div>
       <div class="card">
         <div class="card-head">
-          <h2>Applications</h2>
+          <h2>Universities</h2>
           <div class="filters">${filters.map(f =>
             `<button class="chip" data-filter="${f}" aria-pressed="${state.filter===f}">${f}</button>`
           ).join("")}</div>
@@ -499,10 +477,6 @@
 
   function renderProgress(schools) {
     const yes = schools.filter(s => s.mark === "Yes");
-    const immediate = DATA.tasks
-      .filter(t => t.status !== "done")
-      .sort((a,b) => parse(a.due) - parse(b.due))
-      .slice(0, 8);
     return `<div class="stack">
       <div class="card">
         <div class="card-head">
@@ -517,20 +491,6 @@
           <span class="label"><span style="width:14px;height:12px;border-radius:2px;background:#C00000;display:inline-block"></span> ★ Submit target</span>
           <span class="label"><span style="width:2px;height:14px;background:var(--ink);display:inline-block"></span> Today</span>
         </div>
-      </div>
-      <div class="card">
-        <h2 style="margin-bottom:var(--s-4)">Immediate Deliverables</h2>
-        ${immediate.map(t => {
-          const b = badge(t.due, false);
-          return `<div class="row">
-            <span class="${catClass(t.cat)}">${esc(t.cat)}</span>
-            <div class="grow">
-              <div style="font-weight:600;font-size:14px">${esc(t.t)}</div>
-              <div class="label">${esc(ownerName(t.owner))} · ${esc(t.college)}</div>
-            </div>
-            <span class="${b.cls}">${esc(b.rel)}</span>
-          </div>`;
-        }).join("")}
       </div>
       <div class="grid-cards">${yes.map(s => `
         <div class="card">
@@ -740,45 +700,36 @@
   }
 
   function renderDocs() {
-    const done = DATA.docs.filter(d => d.done).length;
+    const docs = DATA.docs || [];
+    const avg = docs.length ? Math.round(docs.reduce((s,d)=>s+(d.pct==null?(d.done?100:0):d.pct),0)/docs.length) : 0;
     return `<div class="stack">
-      <div class="card">
-        <div class="card-head">
-          <h2>Materials Needed</h2>
-          <span class="label">From the family plan spreadsheet — gather before the first deadline</span>
+      <div class="note">Progress % comes from the <strong>documents needed</strong> tab on the application-plan spreadsheet.</div>
+      <div class="kpis">
+        <div class="kpi">
+          <div class="val">${avg}<span class="unit">%</span></div>
+          <div class="caption" style="margin-top:8px">Average progress</div>
+          <div class="label" style="margin-top:4px">${docs.filter(d=>(d.pct||0)>=100||d.done).length} of ${docs.length} complete</div>
         </div>
-        <div class="tbwrap"><table>
-          <thead><tr>
-            <th class="caption">Item</th><th class="caption">From Whom</th>
-            <th class="caption">Status</th><th class="caption">Due</th>
-          </tr></thead>
-          <tbody>${DATA.materials.map(m => {
-            const b = badge(m.due, m.status==="Ready" || m.status==="Received");
-            const ss = (m.status==="Ready"||m.status==="Received") ? "badge badge-ink"
-              : m.status==="Not started" ? "badge badge-ghost" : "badge badge-soon";
-            return `<tr>
-              <td><div style="font-weight:600">${esc(m.item)}</div><div class="label">${esc(m.note)}</div></td>
-              <td class="nowrap">${esc(m.from)}</td>
-              <td><span class="${ss}">${esc(m.status)}</span></td>
-              <td class="nowrap"><div style="font-weight:600">${m.due?dateLabel(m.due):"Before 1st deadline"}</div><span class="${b.cls}">${m.due?esc(b.rel):""}</span></td>
-            </tr>`;
-          }).join("")}</tbody>
-        </table></div>
       </div>
       <div class="card">
         <div class="card-head">
-          <h2>Suggested documents</h2>
-          <span class="label">${done} of ${DATA.docs.length} ready</span>
+          <h2>Docs-status</h2>
+          <span class="label">Each item’s %</span>
         </div>
-        ${DATA.docs.map(d => {
-          const b = badge(d.due, d.done);
+        ${docs.map(d => {
+          const pct = d.pct == null ? (d.done ? 100 : 0) : d.pct;
+          const b = badge(d.due, d.done || pct>=100);
           return `<div class="listrow">
-            <span class="markbox ${d.done?"on":""}"></span>
             <div class="grow" style="flex:1 1 220px">
-              <div style="font-weight:600;font-size:15px" class="${d.done?"strike":""}">${esc(d.name)}</div>
-              <div class="label">${esc(d.note)}</div>
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline">
+                <div style="font-weight:600;font-size:15px">${esc(d.name)}</div>
+                <div style="font-family:var(--font-display);font-weight:800;font-size:22px">${pct}%</div>
+              </div>
+              <div class="bar-track" style="height:8px;margin:8px 0">
+                <div class="bar-fill" style="width:${pct}%;background:var(--ink)"></div>
+              </div>
+              <div class="label">${esc(d.kind)} · ${esc(d.note||"")}</div>
             </div>
-            <span class="cat cat-doc">${esc(d.kind)}</span>
             <span class="${b.cls}">${esc(b.rel)}</span>
           </div>`;
         }).join("")}

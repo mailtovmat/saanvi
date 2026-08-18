@@ -116,6 +116,8 @@ button { font-family: inherit; }
 .tabbtn:hover { background: var(--n-100); color: var(--ink); }
 .tabbtn[aria-current="page"] { background: var(--ink); color: #fff; }
 .tabbtn[aria-current="page"]:hover { background: var(--ink); color: #fff; }
+.refresh-btn { margin-left: auto; border: 1px solid var(--n-200); }
+.refresh-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 .stack { display: flex; flex-direction: column; gap: var(--s-5); }
 
