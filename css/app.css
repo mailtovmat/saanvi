@@ -312,6 +312,24 @@ footer p { margin-top: 8px; text-transform: none; letter-spacing: 0; font-weight
 .grow { flex: 1; min-width: 0; }
 .nowrap { white-space: nowrap; }
 
+.drive-head, .drive-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 140px 190px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+}
+.drive-head { padding-bottom: 8px; }
+.drive-row { border-top: var(--border); }
+.drive-row:hover { background: var(--n-50); }
+.drive-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.drive-name a { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.drive-ico { flex-shrink: 0; color: var(--n-500); }
+@media (max-width: 720px) {
+  .drive-head { display: none; }
+  .drive-row { grid-template-columns: 1fr; gap: 4px; }
+}
+
 @media (max-width: 720px) {
   .page { padding: 16px 12px 48px; }
   h1 { font-size: 22px; }

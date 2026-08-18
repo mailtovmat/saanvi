@@ -11,7 +11,6 @@ const DATA = {
   studentOwner: "saanvi",
   classYear: "Class of 2027",
   entry: "Fall 2027",
-  sibling: {name:"Amogh", href:"https://mailtovmat.github.io/amogh/"},
   notes: {
     overview: "<strong>This is not a mock with invented acceptances.</strong> Nothing has been submitted. Saanvi\u2019s Excel column has 15 Yes schools (11 US + 4 UK). Northwestern is Yes for her; the Boston location on the spreadsheet is still wrong (OQ-05).",
     applications: "<strong>15 Yes from Saanvi’s list.</strong> Cornell, Boston University and Northwestern are Yes. Intended direction from meeting notes: Aerospace / Mechanical.",

@@ -7,6 +7,7 @@
     {id:"calendar", href:"calendar.html", label:"Calendar"},
     {id:"people", href:"people.html", label:"People"},
     {id:"docs", href:"docs.html", label:"Docs"},
+    {id:"gdrive", href:"gdrive.html", label:"G-Drive"},
     {id:"financial", href:"financial.html", label:"Financial Aid"}
   ];
 
@@ -203,7 +204,7 @@
           </div>
           <div>
             <h1>College Application Tracker</h1>
-            <div class="label" style="margin-top:2px">${esc(DATA.studentName)} · ${esc(DATA.classYear)} · ${esc(DATA.entry)}${DATA.sibling?` · <a href="${esc(DATA.sibling.href)}">${esc(DATA.sibling.name)}</a>`:""}</div>
+            <div class="label" style="margin-top:2px">${esc(DATA.studentName)} · ${esc(DATA.classYear)} · ${esc(DATA.entry)}</div>
           </div>
         </div>
         <div class="as-of label">${esc(dd)} · IST · all dates render in India time</div>
@@ -797,7 +798,7 @@
       </div>
       <div class="card">
         <div class="card-head">
-          <h2>Documents</h2>
+          <h2>Suggested documents</h2>
           <span class="label">${done} of ${DATA.docs.length} ready</span>
         </div>
         ${DATA.docs.map(d => {
@@ -812,6 +813,47 @@
             <span class="${b.cls}">${esc(b.rel)}</span>
           </div>`;
         }).join("")}
+      </div>
+    </div>`;
+  }
+
+  function driveIcon(folder) {
+    if (folder) {
+      return `<svg class="drive-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2 2h11v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7z"/></svg>`;
+    }
+    return `<svg class="drive-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>`;
+  }
+
+  function driveRows(nodes, depth) {
+    return (nodes || []).map(n => {
+      const pad = 8 + depth * 22;
+      const row = `<div class="drive-row">
+        <div class="drive-name" style="padding-left:${pad}px">
+          ${driveIcon(n.folder)}
+          <a href="${esc(n.href)}" target="_blank" rel="noopener noreferrer">${esc(n.name)}</a>
+        </div>
+        <div class="label">${esc(n.kind)}</div>
+        <div class="label nowrap">${esc(n.updated)}</div>
+      </div>`;
+      return row + driveRows(n.children, depth + 1);
+    }).join("");
+  }
+
+  function renderGdrive() {
+    const G = (typeof GDRIVE !== "undefined") ? GDRIVE : {tree:[], fileCount:0, fetched:"—", rootHref:"#", rootName:"Saanvi"};
+    return `<div class="stack">
+      <div class="note">Listing of the Saanvi Google Drive vault. Markdown notes are hidden. Snapshot taken ${esc(G.fetched)}. <a href="${esc(G.rootHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
+      <div class="card">
+        <div class="card-head">
+          <h2>G-Drive</h2>
+          <span class="label">${G.fileCount} file${G.fileCount===1?"":"s"} · folders shown only when they hold a visible file</span>
+        </div>
+        <div class="drive-head">
+          <div class="caption">Name</div>
+          <div class="caption">Kind</div>
+          <div class="caption">Last updated</div>
+        </div>
+        ${G.tree && G.tree.length ? driveRows(G.tree, 0) : `<div class="label" style="padding:14px 12px">No non-markdown files in the vault yet.</div>`}
       </div>
     </div>`;
   }
@@ -889,6 +931,7 @@
     else if (state.page === "calendar") inner = renderCalendar();
     else if (state.page === "people") inner = renderPeople();
     else if (state.page === "docs") inner = renderDocs();
+    else if (state.page === "gdrive") inner = renderGdrive();
     else if (state.page === "financial") inner = renderFinancial(schools);
     root.innerHTML = shell(inner);
     bind();
