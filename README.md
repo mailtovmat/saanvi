@@ -6,6 +6,5 @@ Private family planning dashboard for Saanvi's Fall 2027 university applications
 
 Live site: https://mailtovmat.github.io/saanvi/
 
-Sibling site: https://mailtovmat.github.io/amogh/
-
-Edit `js/data.js` to change what the site shows.
+The vault now lives in Saanvi's Google Drive folder, not on the local PC.
+Edit `js/data.js` to change what this site shows.

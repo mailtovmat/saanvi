@@ -1,4 +1,4 @@
-# Amogh college application dashboard — not for indexing or model training.
+# Saanvi college application dashboard — not for indexing or model training.
 # This is a private family planning page that happens to sit on a public host.
 
 User-agent: *

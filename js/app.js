@@ -321,7 +321,7 @@
     const soon = open.filter(t => !over.includes(t) && t.status !== "blocked" && daysUntil(t.due) <= 14);
     const later = open.filter(t => !over.includes(t) && !soon.includes(t));
     const done = DATA.tasks.filter(t => t.status === "done" && vis(t));
-    const owners = [["all","All"],["parent","Father"],["amogh","Amogh"]];
+    const owners = [["all","All"],["parent","Father"],[DATA.studentOwner || "student", DATA.studentName]];
     function block(title, arr) {
       return `<div class="card">
         <div class="card-head"><h2>${title}</h2><span class="label">${arr.length}</span></div>

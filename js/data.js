@@ -8,12 +8,13 @@
    ============================================================ */
 const DATA = {
   studentName: "Saanvi",
+  studentOwner: "saanvi",
   classYear: "Class of 2027",
   entry: "Fall 2027",
   sibling: {name:"Amogh", href:"https://mailtovmat.github.io/amogh/"},
   notes: {
     overview: "<strong>This is not a mock with invented acceptances.</strong> Nothing has been submitted. Saanvi\u2019s Excel column has 15 Yes schools (11 US + 4 UK). Northwestern is Yes for her; the Boston location on the spreadsheet is still wrong (OQ-05).",
-    applications: "<strong>15 Yes from the Saanvi column.</strong> Cornell, Boston University and Northwestern are Yes for her (they are add / blank for Amogh). Manchester is not on her list. Intended direction from meeting notes: Aerospace / Mechanical.",
+    applications: "<strong>15 Yes from Saanvi’s list.</strong> Cornell, Boston University and Northwestern are Yes. Intended direction from meeting notes: Aerospace / Mechanical.",
     financial: "<strong>The counter-intuitive part.</strong> Saanvi is a non-resident of every US state, so out-of-state publics charge full freight and reserve need-based aid for residents. Full-need privates treat her as any other domestic applicant. On this list the cheap-looking schools are the expensive ones. Three net price calculators would settle it in an evening. No dollar figures appear here because none have been run."
   },
   tz: "Asia/Kolkata",
@@ -55,7 +56,7 @@ const DATA = {
     {id:"SAA-GEN-FIN-03", t:"Run three net price calculators — MIT, one OOS public, one mid private", owner:"parent", due:"2026-08-31", status:"todo", hard:false,
       why:"Free, one evening, and it will settle the shape of the school list faster than any amount of reading.", cat:"Doc", college:"General"},
     {id:"SAA-GEN-APP-04", t:"Cut the school list to a real number", owner:"parent", due:"2026-08-31", status:"todo", hard:false,
-      why:"Excel has 16 Yes, 13 add, 9 unsure. Fifteen US applications is roughly twenty supplement essays. This is the variable that decides October.", cat:"Form", college:"General"},
+      why:"Saanvi's Excel column has 15 Yes (11 US + 4 UK). Confirm Northwestern (OQ-05) and whether any extra schools should join before October.", cat:"Form", college:"General"},
     {id:"SAA-GEN-FIN-06", t:"Resolve whether mother needs an FSA ID (OQ-02)", owner:"parent", due:"2026-08-31", status:"todo", hard:false,
       why:"Required if she is a contributor on the FAFSA. Also determines whether a Noncustodial Profile is in play.", cat:"Doc", college:"General"},
     {id:"SAA-GEN-TST-01", t:"Register for the ESAT October sitting", owner:"parent", due:"2026-09-14", status:"blocked", hard:true,
@@ -73,7 +74,7 @@ const DATA = {
     {id:"SAA-GEN-FIN-09", t:"File CSS Profile", owner:"parent", due:"2026-10-14", status:"todo", hard:false,
       why:"Separate from FAFSA, treats foreign income differently, per-school fees. Check requires_ncp per school.", cat:"Doc", college:"General"},
     {id:"SAA-GEN-ADM-02", t:"Confirm Saanvi has a US Social Security Number", owner:"parent", due:"2026-08-20", status:"todo",
-      why:"Amogh's SSN is confirmed. Saanvi's is not recorded here. Unblocks her FSA ID and FAFSA.", cat:"Doc", college:"General"},
+      why:"Saanvi's SSN is not recorded here. Confirm it. Unblocks her FSA ID and FAFSA.", cat:"Doc", college:"General"},
     {id:"SAA-GEN-TST-05", t:"Record Saanvi's SAT total and section split", owner:"parent", due:"2026-08-19", status:"todo",
       why:"Meeting notes have an incomplete “SAT - 150”. Do not invent a number.", cat:"Doc", college:"General"},
     {id:"SAA-GEN-ADM-04", t:"Move the counselor-exchange folder out of the vault", owner:"parent", due:"2026-08-24", status:"done",
@@ -206,7 +207,7 @@ const DATA = {
 
   aid: [
     {i:"FSA ID — Saanvi", d:"By 22 Aug 2026", o:"parent", s:"not started", n:"Confirm SSN first. Foreign address may trigger 1–3 week manual review."},
-    {i:"FSA ID — father", d:"By 22 Aug 2026", o:"parent", s:"unblocked", n:"Separate email and phone from Saanvi's. May already be in progress for Amogh."},
+    {i:"FSA ID — father", d:"By 22 Aug 2026", o:"parent", s:"unblocked", n:"Separate email and phone from Saanvi's."},
     {i:"FSA ID — mother", d:"By 31 Aug 2026", o:"parent", s:"open question", n:"OQ-02 — only if she is a FAFSA contributor."},
     {i:"FEIE documentation packet", d:"By 25 Sept 2026", o:"parent", s:"not started", n:"Form 2555, full 1040 with all schedules, employer statements, currency basis."},
     {i:"FAFSA 2027–28", d:"Opens 1 Oct 2026", o:"parent", s:"waiting", n:"Uses the 2025 return. FEIE added straight back into the SAI."},
@@ -219,7 +220,7 @@ const DATA = {
     {id:"OQ-01", t:"Intended major — meeting notes say Aerospace / Mechanical, also open to Mechanical. Lock the UCAS course."},
     {id:"OQ-02", t:"Do both parents appear on the aid applications? Noncustodial Profile?"},
     {id:"OQ-03", t:"Budget ceiling, and is full-pay viable? Answer before the list is cut."},
-    {id:"OQ-04", t:"Saanvi’s column is cleaner (15 Yes, no add). Still confirm Northwestern and whether any Amogh-add schools should join her list."},
+    {id:"OQ-04", t:"Saanvi’s column is 15 Yes with no add. Confirm Northwestern and whether any other schools should join her list."},
     {id:"OQ-05", t:"Northwestern is Yes for Saanvi but listed as Boston, MA. Northwestern is Evanston, IL."},
     {id:"OQ-06", t:"Which AS subjects are being retaken, and why?"},
     {id:"OQ-07", t:"Is there an Indian ESAT test centre, and where?"},
