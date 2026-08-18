@@ -37,6 +37,7 @@
     calYear: 2026,
     calMonth: 7,
     calDay: null,
+    calKeysBound: false,
     planMeta: null,
     refreshErr: null,
     refreshing: false
@@ -880,26 +881,34 @@
     </div>`;
   }
 
+  function closeCalDay() {
+    if (!state.calDay) return;
+    state.calDay = null;
+    render();
+  }
+
   function renderDayDetail() {
     const ds = state.calDay;
-    if (!ds) {
-      return `<div class="cal-detail is-empty" id="cal-detail">
-        <div class="caption">Date details</div>
-        <div class="label" style="margin-top:6px">Click a date that has text. Every cell stays the same size — the full wording opens here.</div>
-      </div>`;
-    }
+    if (!ds) return "";
     const list = eventsByDate()[ds] || [];
     const heading = parse(ds).toLocaleDateString("en-GB", {weekday:"long", day:"numeric", month:"long", year:"numeric"});
+    const closeBtn = `<button type="button" class="cal-close" data-cal-close aria-label="Close date details">Close</button>`;
     if (!list.length) {
-      return `<div class="cal-detail is-empty" id="cal-detail">
-        <div class="caption">${esc(heading)}</div>
+      return `<div class="cal-detail is-empty" id="cal-detail" role="dialog" aria-label="Date details">
+        <div class="cal-detail-bar">
+          <div class="caption">${esc(heading)}</div>
+          ${closeBtn}
+        </div>
         <div class="label" style="margin-top:6px">No items on this date.</div>
       </div>`;
     }
-    return `<div class="cal-detail" id="cal-detail">
-      <div class="card-head" style="margin-bottom:4px">
-        <h2>${esc(heading)}</h2>
-        <span class="label">${list.length} item${list.length===1?"":"s"}</span>
+    return `<div class="cal-detail" id="cal-detail" role="dialog" aria-label="Date details">
+      <div class="cal-detail-bar">
+        <div>
+          <h2>${esc(heading)}</h2>
+          <div class="label" style="margin-top:2px">${list.length} item${list.length===1?"":"s"}</div>
+        </div>
+        ${closeBtn}
       </div>
       ${list.map(e => `
         <div class="cal-detail-item">
@@ -914,7 +923,7 @@
     const months = [7,8,9,10,11]; // Aug–Dec 2026
     return `<div class="stack">
       ${renderLaneTimeline()}
-      <div class="note">Date cells stay one size. Click a day that has text to read the full item in the box below. Vault tasks also live on the <strong>Tasks</strong> tab of the application-plan spreadsheet.</div>
+      <div class="note">Date cells stay one size. Click a day that has text to read it above the months, then <strong>Close</strong> to go back to the calendar. Vault tasks also live on the <strong>Tasks</strong> tab of the application-plan spreadsheet.</div>
       ${renderDayDetail()}
       ${months.map(m => {
         const label = new Date(2026, m, 1).toLocaleDateString("en-US",{month:"long", year:"numeric"});
@@ -1162,6 +1171,15 @@
         if (box) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
       });
     });
+    document.querySelectorAll("[data-cal-close]").forEach(el => {
+      el.addEventListener("click", () => { closeCalDay(); });
+    });
+    if (!state.calKeysBound) {
+      state.calKeysBound = true;
+      document.addEventListener("keydown", ev => {
+        if (ev.key === "Escape" && state.page === "calendar") closeCalDay();
+      });
+    }
     const refreshBtn = document.querySelector("[data-refresh]");
     if (refreshBtn) refreshBtn.addEventListener("click", () => { refreshPlan(); });
     addEventListener("resize", () => { if (state.page === "calendar") packRail(); });
