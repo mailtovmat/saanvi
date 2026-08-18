@@ -41,6 +41,7 @@
     refreshErr: null,
     refreshing: false
   };
+  let refreshInFlight = false;
 
   function todayStr() {
     return new Intl.DateTimeFormat("en-CA", {
@@ -390,7 +391,8 @@
     }).format(new Date()) + " IST";
   }
   async function refreshPlan() {
-    if (state.refreshing) return;
+    if (refreshInFlight) return;
+    refreshInFlight = true;
     state.refreshing = true;
     state.refreshErr = null;
     const btn = document.querySelector("[data-refresh]");
@@ -416,6 +418,7 @@
     } catch (err) {
       state.refreshErr = (err && err.message) || "Refresh failed.";
     }
+    refreshInFlight = false;
     state.refreshing = false;
     render();
   }
@@ -1173,7 +1176,9 @@
     if (DATA.PUBLIC) {
       DATA.tasks.forEach(t => { if (t.why) t.why = t.why.replace(/1510/g, "the score on file"); });
     }
+    state.refreshing = true;
     render();
+    refreshPlan();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
