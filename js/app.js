@@ -21,6 +21,13 @@
   const BREAK = [17,18,19];
   const T0 = parse("2026-08-01");
   const T1 = parse("2027-04-01");
+  const PLAN = {
+    fileId: "1LEN1jrH1JUmb1ZzAlYra48RuRtAd_6ev",
+    editUrl: "https://docs.google.com/spreadsheets/d/1LEN1jrH1JUmb1ZzAlYra48RuRtAd_6ev/edit",
+    tasksSheet: "Tasks",
+    docsSheet: "Documents Needed",
+    cacheKey: "saanvi.plan.v1"
+  };
 
   const state = {
     page: "overview",
@@ -28,7 +35,11 @@
     owner: "all",
     showDone: false,
     calYear: 2026,
-    calMonth: 7
+    calMonth: 7,
+    calDay: null,
+    planMeta: null,
+    refreshErr: null,
+    refreshing: false
   };
 
   function todayStr() {
@@ -193,6 +204,231 @@
       </div>`).join("");
   }
 
+  function headerKey(h) {
+    const n = String(h || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!n) return null;
+    if (n === "status (%)" || n === "status(%)" || n === "status%") return "pct";
+    if (n === "date" || n === "by when") return "due";
+    if (n === "owner") return "owner";
+    if (n === "from whom") return "from";
+    if (n === "status") return "status";
+    if (n === "hard?" || n === "hard") return "hard";
+    if (n === "task" || n === "things needed") return "title";
+    if (n === "why" || n === "notes") return "why";
+    if (n === "id") return "id";
+    if (n === "region") return "region";
+    return n;
+  }
+  function cellVal(c) {
+    if (c == null) return "";
+    if (c.v != null) return c.v;
+    if (c.f != null) return c.f;
+    return "";
+  }
+  function sheetDate(v) {
+    if (v == null || v === "") return null;
+    const s = String(v).trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const gviz = /^Date\((\d+),(\d+),(\d+)/.exec(s);
+    if (gviz) return `${gviz[1]}-${pad(+gviz[2] + 1)}-${pad(+gviz[3])}`;
+    if (/tbd|verify|before |after |deadline|opens |remember |time consuming|needed well|fill it|in advance/i.test(s)) {
+      return null;
+    }
+    if (/[a-z]{3}/i.test(s) && /\d{4}/.test(s)) {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) return iso(d);
+    }
+    return null;
+  }
+  function sheetPct(v) {
+    if (v == null || v === "") return 0;
+    const n = parseFloat(String(v).replace("%", "").trim());
+    if (isNaN(n)) return 0;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  }
+  function sheetOwner(v) {
+    const s = String(v || "").trim().toLowerCase();
+    if (!s) return null;
+    if (s === "saanvi" || s === "student" || s === "amogh") return "saanvi";
+    if (s === "father" || s === "parent" || s === "dad" || s === "mother" || s === "mum" || s === "mom") return "parent";
+    return s;
+  }
+  function sheetHard(v) {
+    const s = String(v || "").trim().toLowerCase();
+    return s === "yes" || s === "y" || s === "true" || s === "1" || s === "hard";
+  }
+  function sheetStatus(v, pct) {
+    const s = String(v || "").trim().toLowerCase();
+    if (pct >= 100 || s === "done" || s === "complete" || s === "completed") return "done";
+    if (s === "blocked") return "blocked";
+    return "todo";
+  }
+  function tableRows(table) {
+    const rows = (table && table.rows) || [];
+    if (!rows.length) return [];
+    const keys = (rows[0].c || []).map(c => headerKey(cellVal(c)));
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      const cells = rows[i].c || [];
+      const obj = {};
+      let empty = true;
+      keys.forEach((k, j) => {
+        if (!k) return;
+        const val = cellVal(cells[j]);
+        obj[k] = val;
+        if (String(val == null ? "" : val).trim()) empty = false;
+      });
+      if (!empty) out.push(obj);
+    }
+    return out;
+  }
+  function gvizTable(sheetName) {
+    return new Promise((resolve, reject) => {
+      const cb = "saanviGviz_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+      const script = document.createElement("script");
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out reading “" + sheetName + "”."));
+      }, 20000);
+      function cleanup() {
+        clearTimeout(timer);
+        try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+      window[cb] = function (resp) {
+        cleanup();
+        if (!resp || resp.status !== "ok" || !resp.table) {
+          const msg = resp && resp.errors && resp.errors[0] && resp.errors[0].detailed_message;
+          reject(new Error(msg || "Could not read the “" + sheetName + "” tab."));
+          return;
+        }
+        resolve(resp.table);
+      };
+      script.onerror = function () {
+        cleanup();
+        reject(new Error("Could not reach Google Sheets."));
+      };
+      script.src = "https://docs.google.com/spreadsheets/d/" + PLAN.fileId +
+        "/gviz/tq?tqx=responseHandler:" + cb + "&sheet=" + encodeURIComponent(sheetName);
+      document.head.appendChild(script);
+    });
+  }
+  function tasksFromSheet(rows) {
+    const prev = {};
+    (DATA.tasks || []).forEach(t => { if (t.id) prev[t.id] = t; });
+    return rows.map(r => {
+      const title = String(r.title || "").trim();
+      if (!title) return null;
+      const id = String(r.id || "").trim();
+      const pct = sheetPct(r.pct);
+      const status = sheetStatus(r.status, pct);
+      const due = sheetDate(r.due);
+      const old = id ? prev[id] : null;
+      return {
+        id: id || (old && old.id) || "",
+        t: title,
+        owner: sheetOwner(r.owner) || (old && old.owner) || null,
+        due,
+        status,
+        hard: sheetHard(r.hard),
+        why: String(r.why == null ? "" : r.why).trim(),
+        cat: (old && old.cat) || "Doc",
+        college: (old && old.college) || "General"
+      };
+    }).filter(Boolean);
+  }
+  function docsFromSheet(rows) {
+    let section = "Materials";
+    const docs = [];
+    rows.forEach(r => {
+      const title = String(r.title || "").trim();
+      const pctRaw = r.pct;
+      if (!title && String(pctRaw || "").trim().toUpperCase() === "SUGGESTED DOCS") {
+        section = "Suggested";
+        return;
+      }
+      if (!title) return;
+      const pct = sheetPct(pctRaw);
+      const due = sheetDate(r.due);
+      const note = String(r.why == null ? "" : r.why).trim();
+      const from = String(r.from || "").trim();
+      docs.push({
+        name: title,
+        kind: section === "Suggested" ? "Suggested" : (String(r.region || "").trim() || section),
+        due,
+        done: pct >= 100,
+        pct,
+        note: from && note ? from + " · " + note : (note || from)
+      });
+    });
+    return docs;
+  }
+  function applyPlan(tasks, docs, meta) {
+    if (tasks && tasks.length) DATA.tasks = tasks;
+    if (docs && docs.length) DATA.docs = docs;
+    state.planMeta = meta || null;
+  }
+  function loadPlanCache() {
+    try {
+      const raw = localStorage.getItem(PLAN.cacheKey);
+      if (!raw) return;
+      const c = JSON.parse(raw);
+      if (!c || (!c.tasks && !c.docs)) return;
+      applyPlan(c.tasks, c.docs, c.meta);
+    } catch (e) { /* keep shipped data.js */ }
+  }
+  function savePlanCache(tasks, docs, meta) {
+    try {
+      localStorage.setItem(PLAN.cacheKey, JSON.stringify({ tasks, docs, meta }));
+    } catch (e) { /* private mode / quota */ }
+  }
+  function planWhenLabel() {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: DATA.tz, day: "numeric", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    }).format(new Date()) + " IST";
+  }
+  async function refreshPlan() {
+    if (state.refreshing) return;
+    state.refreshing = true;
+    state.refreshErr = null;
+    const btn = document.querySelector("[data-refresh]");
+    if (btn) { btn.setAttribute("aria-busy", "true"); btn.textContent = "Refreshing…"; }
+    try {
+      const [taskTable, docTable] = await Promise.all([
+        gvizTable(PLAN.tasksSheet),
+        gvizTable(PLAN.docsSheet)
+      ]);
+      const tasks = tasksFromSheet(tableRows(taskTable));
+      const docs = docsFromSheet(tableRows(docTable));
+      if (!tasks.length && !docs.length) {
+        throw new Error("The Tasks and Documents Needed tabs came back empty. Nothing was changed.");
+      }
+      const meta = {
+        when: planWhenLabel(),
+        tasks: tasks.length,
+        docs: docs.length,
+        source: "application-plan"
+      };
+      applyPlan(tasks, docs, meta);
+      savePlanCache(tasks, docs, meta);
+    } catch (err) {
+      state.refreshErr = (err && err.message) || "Refresh failed.";
+    }
+    state.refreshing = false;
+    render();
+  }
+  function refreshBanner() {
+    if (state.refreshErr) {
+      return `<div class="refresh-status is-err" role="status">Refresh failed: ${esc(state.refreshErr)} The <a href="${esc(PLAN.editUrl)}" target="_blank" rel="noopener noreferrer">application-plan</a> file must stay shared as <em>Anyone with the link can view</em>.</div>`;
+    }
+    if (state.planMeta) {
+      return `<div class="refresh-status" role="status">Showing ${esc(state.planMeta.source)} · ${state.planMeta.tasks} tasks · ${state.planMeta.docs} documents · ${esc(state.planMeta.when)}</div>`;
+    }
+    return "";
+  }
+
   function shell(inner) {
     const today = todayStr();
     const dd = parse(today).toLocaleDateString("en-GB", {weekday:"long", day:"numeric", month:"long", year:"numeric"});
@@ -211,8 +447,9 @@
       </header>
       <nav class="tabs" aria-label="Sections">
         ${PAGES.map(p => `<a class="tabbtn" href="${p.href}" ${p.id===state.page?'aria-current="page"':""}>${p.label}</a>`).join("")}
-        <button type="button" class="tabbtn refresh-btn" disabled title="Refresh — will reload spreadsheet sources. Not wired yet.">Refresh</button>
+        <button type="button" class="tabbtn refresh-btn" data-refresh ${state.refreshing?'aria-busy="true"':""} title="Reload Tasks and Documents Needed from the application-plan spreadsheet">${state.refreshing?"Refreshing…":"Refresh"}</button>
       </nav>
+      ${refreshBanner()}
       ${inner}
       <footer>
         <div>${esc(DATA.studentName)}'s College Tracker · redesigned 18 Aug 2026</div>
@@ -592,6 +829,15 @@
         done:false, overdue:daysUntil(e.d)<0, track:e.track, hard:!!e.hard, kind:"Deadline"
       });
     });
+    (DATA.docs || []).forEach(d => {
+      if (!d.due) return;
+      const done = !!(d.done || (d.pct != null && d.pct >= 100));
+      push(d.due, {
+        title: d.name, detail: d.note || "", owner: "",
+        done, overdue: !done && daysUntil(d.due) < 0,
+        track: "us", hard: false, kind: d.kind || "documents needed"
+      });
+    });
     return map;
   }
 
@@ -608,27 +854,22 @@
     const evs = eventsByDate();
     const wd = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const cells = [];
-    for (let i=0;i<startDay;i++) cells.push(`<div class="cal-pad"></div>`);
+    for (let i=0;i<startDay;i++) cells.push(`<div class="cal-cell cal-pad" aria-hidden="true"></div>`);
     for (let d=1; d<=dim; d++) {
       const ds = `${y}-${pad(m+1)}-${pad(d)}`;
       const list = evs[ds] || [];
       const isToday = ds === todayStr();
-      const pills = list.slice(0,3).map(e => `<div class="pill-ev" style="${pillStyle(e)}">${esc(e.title)}</div>`);
-      if (list.length > 3) pills.push(`<div class="label" style="font-size:10px;padding-left:3px">+${list.length-3} more — click</div>`);
+      const isSel = state.calDay === ds;
+      const pills = list.slice(0,2).map(e => `<div class="pill-ev" style="${pillStyle(e)}">${esc(e.title)}</div>`);
+      if (list.length > 2) pills.push(`<div class="label" style="font-size:10px;padding-left:3px">+${list.length-2} more</div>`);
+      const cls = `cal-cell${list.length?" has-ev":""}${isToday?" today":""}${isSel?" is-sel":""}`;
       if (!list.length) {
-        cells.push(`<div class="cal-cell${isToday?" today":""}"><div class="cal-num">${d}</div></div>`);
+        cells.push(`<div class="${cls}"><div class="cal-num">${d}</div></div>`);
         continue;
       }
-      const body = list.map(e => `
-        <div class="cal-expand-item">
-          <div style="font-weight:700;font-size:13px">${esc(e.title)}</div>
-          <div class="label">${esc(e.kind)}${e.owner?" · "+esc(e.owner):""}${e.hard?" · hard cutoff":""}${e.overdue?" · overdue":""}${e.done?" · done":""}</div>
-          ${e.detail?`<div style="margin-top:4px;font-size:13px;color:var(--ink-soft)">${esc(e.detail)}</div>`:""}
-        </div>`).join("");
-      cells.push(`<details class="cal-cell has-ev${isToday?" today":""}">
-        <summary><div class="cal-num">${d}</div>${pills.join("")}</summary>
-        <div class="cal-expand">${body}</div>
-      </details>`);
+      cells.push(`<button type="button" class="${cls}" data-day="${ds}" aria-pressed="${isSel?"true":"false"}">
+        <div class="cal-num">${d}</div>${pills.join("")}
+      </button>`);
     }
     return `<div class="cal-month">
       <div class="cal-head">${wd.map(d=>`<div class="cal-wd">${d}</div>`).join("")}</div>
@@ -636,15 +877,46 @@
     </div>`;
   }
 
+  function renderDayDetail() {
+    const ds = state.calDay;
+    if (!ds) {
+      return `<div class="cal-detail is-empty" id="cal-detail">
+        <div class="caption">Date details</div>
+        <div class="label" style="margin-top:6px">Click a date that has text. Every cell stays the same size — the full wording opens here.</div>
+      </div>`;
+    }
+    const list = eventsByDate()[ds] || [];
+    const heading = parse(ds).toLocaleDateString("en-GB", {weekday:"long", day:"numeric", month:"long", year:"numeric"});
+    if (!list.length) {
+      return `<div class="cal-detail is-empty" id="cal-detail">
+        <div class="caption">${esc(heading)}</div>
+        <div class="label" style="margin-top:6px">No items on this date.</div>
+      </div>`;
+    }
+    return `<div class="cal-detail" id="cal-detail">
+      <div class="card-head" style="margin-bottom:4px">
+        <h2>${esc(heading)}</h2>
+        <span class="label">${list.length} item${list.length===1?"":"s"}</span>
+      </div>
+      ${list.map(e => `
+        <div class="cal-detail-item">
+          <div style="font-weight:700;font-size:14px">${esc(e.title)}</div>
+          <div class="label" style="margin-top:3px">${esc(e.kind)}${e.owner?" · "+esc(e.owner):""}${e.hard?" · hard cutoff":""}${e.overdue?" · overdue":""}${e.done?" · done":""}</div>
+          ${e.detail?`<div style="margin-top:6px;font-size:14px;color:var(--ink-soft)">${esc(e.detail)}</div>`:""}
+        </div>`).join("")}
+    </div>`;
+  }
+
   function renderCalendar() {
     const months = [7,8,9,10,11]; // Aug–Dec 2026
     return `<div class="stack">
       ${renderLaneTimeline()}
-      <div class="note">Click a day with items to expand and read the full text. Vault tasks also live on the <strong>Tasks</strong> tab of the application-plan spreadsheet.</div>
+      <div class="note">Date cells stay one size. Click a day that has text to read the full item in the box below. Vault tasks also live on the <strong>Tasks</strong> tab of the application-plan spreadsheet.</div>
+      ${renderDayDetail()}
       ${months.map(m => {
         const label = new Date(2026, m, 1).toLocaleDateString("en-US",{month:"long", year:"numeric"});
         return `<div class="card">
-          <div class="card-head"><h2>${esc(label)}</h2><span class="label">Click a dated day to expand</span></div>
+          <div class="card-head"><h2>${esc(label)}</h2><span class="label">Same-size cells</span></div>
           ${monthCalendar(2026, m)}
         </div>`;
       }).join("")}
@@ -878,6 +1150,17 @@
         render();
       });
     });
+    document.querySelectorAll("[data-day]").forEach(el => {
+      el.addEventListener("click", () => {
+        const ds = el.getAttribute("data-day");
+        state.calDay = state.calDay === ds ? null : ds;
+        render();
+        const box = document.getElementById("cal-detail");
+        if (box) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    });
+    const refreshBtn = document.querySelector("[data-refresh]");
+    if (refreshBtn) refreshBtn.addEventListener("click", () => { refreshPlan(); });
     addEventListener("resize", () => { if (state.page === "calendar") packRail(); });
   }
 
@@ -886,6 +1169,7 @@
     state.page = (root && root.dataset.page) || "overview";
     const t = parse(todayStr());
     if (t) { state.calYear = t.getFullYear(); state.calMonth = t.getMonth(); }
+    loadPlanCache();
     if (DATA.PUBLIC) {
       DATA.tasks.forEach(t => { if (t.why) t.why = t.why.replace(/1510/g, "the score on file"); });
     }
