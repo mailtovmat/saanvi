@@ -26,7 +26,9 @@
     editUrl: "https://docs.google.com/spreadsheets/d/1LEN1jrH1JUmb1ZzAlYra48RuRtAd_6ev/edit",
     tasksSheet: "Tasks",
     docsSheet: "Documents Needed",
-    cacheKey: "saanvi.plan.v1"
+    cacheKey: "saanvi.plan.v1",
+    driveRoot: "1oOyuDasMra4G_DoRRc6lDLAOOM_MS8dR",
+    driveHref: "https://drive.google.com/drive/folders/1oOyuDasMra4G_DoRRc6lDLAOOM_MS8dR"
   };
 
   const state = {
@@ -40,7 +42,8 @@
     calKeysBound: false,
     planMeta: null,
     refreshErr: null,
-    refreshing: false
+    refreshing: false,
+    driveStamp: Date.now()
   };
   let refreshInFlight = false;
 
@@ -416,6 +419,7 @@
       };
       applyPlan(tasks, docs, meta);
       savePlanCache(tasks, docs, meta);
+      state.driveStamp = Date.now();
     } catch (err) {
       state.refreshErr = (err && err.message) || "Refresh failed.";
     }
@@ -1044,20 +1048,16 @@
   }
 
   function renderGdrive() {
-    const G = (typeof GDRIVE !== "undefined") ? GDRIVE : {tree:[], fileCount:0, fetched:"—", rootHref:"#", rootName:"Saanvi"};
+    const liveSrc = "https://drive.google.com/embeddedfolderview?id=" + encodeURIComponent(PLAN.driveRoot) +
+      "&t=" + encodeURIComponent(String(state.driveStamp)) + "#list";
     return `<div class="stack">
-      <div class="note">Listing of the Saanvi Google Drive vault. Markdown notes are hidden. Snapshot taken ${esc(G.fetched)}. <a href="${esc(G.rootHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
+      <div class="note">Live listing of the Saanvi Google Drive vault. Opening this page or clicking <strong>Refresh</strong> reloads it from Drive. <a href="${esc(PLAN.driveHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
       <div class="card">
         <div class="card-head">
           <h2>G-Drive</h2>
-          <span class="label">${G.fileCount} file${G.fileCount===1?"":"s"} · folders shown only when they hold a visible file</span>
+          <span class="label">Live from Drive</span>
         </div>
-        <div class="drive-head">
-          <div class="caption">Name</div>
-          <div class="caption">Kind</div>
-          <div class="caption">Last updated</div>
-        </div>
-        ${G.tree && G.tree.length ? driveRows(G.tree, 0) : `<div class="label" style="padding:14px 12px">No non-markdown files in the vault yet.</div>`}
+        <iframe class="drive-live" title="Saanvi Google Drive vault" src="${esc(liveSrc)}"></iframe>
       </div>
     </div>`;
   }
