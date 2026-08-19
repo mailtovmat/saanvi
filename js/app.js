@@ -527,10 +527,9 @@
     const btn = document.querySelector("[data-refresh]");
     if (btn) { btn.setAttribute("aria-busy", "true"); btn.textContent = "Refreshing…"; }
     try {
-      const [taskRes, docRes, driveRes] = await Promise.allSettled([
+      const [taskRes, docRes] = await Promise.allSettled([
         gvizTable(PLAN.tasksSheet),
-        gvizTable(PLAN.docsSheet),
-        fetchDriveListing()
+        gvizTable(PLAN.docsSheet)
       ]);
       if (taskRes.status !== "fulfilled" || docRes.status !== "fulfilled") {
         throw new Error((taskRes.reason && taskRes.reason.message) ||
@@ -549,14 +548,6 @@
       };
       applyPlan(tasks, docs, meta);
       savePlanCache(tasks, docs, meta);
-      if (driveRes.status === "fulfilled") {
-        applyDrive(driveRes.value);
-        saveDriveCache(driveRes.value);
-        meta.drive = driveRes.value.fileCount;
-        state.planMeta = meta;
-      } else if (!state.gdrive && typeof GDRIVE === "undefined") {
-        state.refreshErr = (driveRes.reason && driveRes.reason.message) || "Drive listing could not be refreshed.";
-      }
     } catch (err) {
       state.refreshErr = (err && err.message) || "Refresh failed.";
     }
@@ -566,7 +557,7 @@
   }
   function refreshBanner() {
     if (state.refreshErr) {
-      return `<div class="refresh-status is-err" role="status">Refresh failed: ${esc(state.refreshErr)} The <a href="${esc(PLAN.editUrl)}" target="_blank" rel="noopener noreferrer">application-plan</a> file must stay shared as <em>Anyone with the link can view</em>.</div>`;
+      return `<div class="refresh-status is-err" role="status">Refresh failed: ${esc(state.refreshErr)}</div>`;
     }
     if (state.planMeta) {
       const driveBit = state.planMeta.drive != null ? ` · Drive ${state.planMeta.drive} files` : "";
