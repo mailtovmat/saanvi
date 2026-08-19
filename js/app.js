@@ -261,7 +261,8 @@
   function sheetOwner(v) {
     const s = String(v || "").trim().toLowerCase();
     if (!s) return null;
-    if (s === "saanvi" || s === "student" || s === "amogh") return "saanvi";
+    if (s === "saanvi" || s === "student") return "saanvi";
+    if (s === "amogh") return "amogh";
     if (s === "father" || s === "parent" || s === "dad" || s === "mother" || s === "mum" || s === "mom") return "parent";
     return s;
   }
@@ -413,7 +414,10 @@
       const raw = localStorage.getItem(PLAN.driveCacheKey);
       if (!raw) return;
       const c = JSON.parse(raw);
-      if (c && Array.isArray(c.tree)) applyDrive(c);
+      if (!c || !Array.isArray(c.tree)) return;
+      const shipped = (typeof GDRIVE !== "undefined") ? GDRIVE : null;
+      if (shipped && shipped.fetchedIso && (!c.fetchedIso || c.fetchedIso < shipped.fetchedIso)) return;
+      applyDrive(c);
     } catch (e) { /* keep shipped gdrive-data.js */ }
   }
   function saveDriveCache(payload) {
@@ -493,10 +497,20 @@
     await Promise.all(Array.from({ length: items.length ? n : 0 }, worker));
     return out;
   }
-  async function walkDriveFolder(folderId, seen) {
+  async function walkDriveFolder(folderId, seen, required) {
     if (seen.has(folderId)) return [];
     seen.add(folderId);
-    const items = parseDriveFolderPage(await fetchDriveFolderText(folderId));
+    let text;
+    try {
+      text = await fetchDriveFolderText(folderId);
+    } catch (e) {
+      if (required) throw e;
+      return [];
+    }
+    const items = parseDriveFolderPage(text);
+    if (required && !items.length) {
+      throw new Error("Could not read the Saanvi Drive folder listing.");
+    }
     const files = [];
     const folders = [];
     items.forEach(item => {
@@ -505,7 +519,7 @@
       else if (!item.folder) files.push(Object.assign({}, item, { children: [] }));
     });
     const nested = await mapPool(folders, 4, async folder => {
-      const children = await walkDriveFolder(folder.id, seen);
+      const children = await walkDriveFolder(folder.id, seen, false);
       if (!children.length) return null;
       return {
         name: folder.name, kind: "Folder", folder: true,
@@ -520,11 +534,12 @@
     return (nodes || []).reduce((n, node) => n + (node.folder ? countDriveFiles(node.children) : 1), 0);
   }
   async function fetchDriveListing() {
-    const tree = await walkDriveFolder(PLAN.driveRoot, new Set());
+    const tree = await walkDriveFolder(PLAN.driveRoot, new Set(), true);
     return {
       rootName: "Saanvi",
       rootHref: PLAN.driveHref,
       fetched: planWhenLabel(),
+      fetchedIso: new Date().toISOString(),
       fileCount: countDriveFiles(tree),
       tree
     };
@@ -543,10 +558,15 @@
     const btn = document.querySelector("[data-refresh]");
     if (btn) { btn.setAttribute("aria-busy", "true"); btn.textContent = "Refreshing…"; }
     try {
-      const [taskRes, docRes] = await Promise.allSettled([
+      const [taskRes, docRes, driveRes] = await Promise.allSettled([
         gvizTable(PLAN.tasksSheet),
-        gvizTable(PLAN.docsSheet)
+        gvizTable(PLAN.docsSheet),
+        fetchDriveListing()
       ]);
+      if (driveRes.status === "fulfilled" && driveRes.value && Array.isArray(driveRes.value.tree)) {
+        applyDrive(driveRes.value);
+        saveDriveCache(driveRes.value);
+      }
       if (taskRes.status !== "fulfilled" || docRes.status !== "fulfilled") {
         throw new Error((taskRes.reason && taskRes.reason.message) ||
           (docRes.reason && docRes.reason.message) || "Could not read saanvi-application-plan.");
@@ -560,6 +580,7 @@
         when: planWhenLabel(),
         tasks: tasks.length,
         docs: docs.length,
+        drive: (driveRes.status === "fulfilled" && driveRes.value) ? driveRes.value.fileCount : undefined,
         source: "saanvi-application-plan"
       };
       applyPlan(tasks, docs, meta);
@@ -600,7 +621,7 @@
       </header>
       <nav class="tabs" aria-label="Sections">
         ${PAGES.map(p => `<a class="tabbtn" href="${p.href}" ${p.id===state.page?'aria-current="page"':""}>${p.label}</a>`).join("")}
-        <button type="button" class="tabbtn refresh-btn" data-refresh ${state.refreshing?'aria-busy="true"':""} title="Reload Tasks and Documents Needed from saanvi-application-plan">${state.refreshing?"Refreshing…":"Refresh"}</button>
+        <button type="button" class="tabbtn refresh-btn" data-refresh ${state.refreshing?'aria-busy="true"':""} title="Reload Tasks, Documents Needed, and the G-Drive listing">${state.refreshing?"Refreshing…":"Refresh"}</button>
       </nav>
       ${refreshBanner()}
       ${inner}
@@ -1132,11 +1153,19 @@
     </div>`;
   }
 
+  function sortDocsByDue(docs) {
+    return (docs || []).slice().sort((a, b) => {
+      if (a.due && b.due && a.due !== b.due) return a.due < b.due ? -1 : 1;
+      if (a.due && !b.due) return -1;
+      if (!a.due && b.due) return 1;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+  }
   function renderDocs() {
-    const docs = DATA.docs || [];
+    const docs = sortDocsByDue(DATA.docs || []);
     const avg = docs.length ? Math.round(docs.reduce((s,d)=>s+(d.pct==null?(d.done?100:0):d.pct),0)/docs.length) : 0;
     return `<div class="stack">
-      <div class="note">Progress % comes from the <strong>documents needed</strong> tab on saanvi-application-plan.</div>
+      <div class="note">Progress % comes from the <strong>documents needed</strong> tab on saanvi-application-plan. Listed earliest due date first; items with no date are at the bottom.</div>
       <div class="kpis">
         <div class="kpi">
           <div class="val">${avg}<span class="unit">%</span></div>
@@ -1147,7 +1176,7 @@
       <div class="card">
         <div class="card-head">
           <h2>Docs-status</h2>
-          <span class="label">Each item’s %</span>
+          <span class="label">Earliest due first</span>
         </div>
         ${docs.map(d => {
           const pct = d.pct == null ? (d.done ? 100 : 0) : d.pct;
@@ -1163,7 +1192,10 @@
               </div>
               <div class="label">${esc(d.kind)} · ${esc(d.note||"")}</div>
             </div>
-            <span class="${b.cls}">${esc(b.rel)}</span>
+            <div style="text-align:right;white-space:nowrap">
+              <div class="label">${d.due ? fmt(d.due) : "No date"}</div>
+              <span class="${b.cls}">${esc(b.rel)}</span>
+            </div>
           </div>`;
         }).join("")}
       </div>
@@ -1195,7 +1227,7 @@
   function renderGdrive() {
     const G = state.gdrive || ((typeof GDRIVE !== "undefined") ? GDRIVE : {tree:[], fileCount:0, fetched:"—", rootHref:PLAN.driveHref, rootName:"Saanvi"});
     return `<div class="stack">
-      <div class="note">Listing of the Saanvi Google Drive vault. Markdown notes are hidden. Updated ${esc(G.fetched)}. <a href="${esc(G.rootHref || PLAN.driveHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
+      <div class="note">Listing of the Saanvi Google Drive vault. Markdown notes are hidden, so deleting a .md file will not change this list. Refresh re-reads the folder. Updated ${esc(G.fetched)}. <a href="${esc(G.rootHref || PLAN.driveHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
       <div class="card">
         <div class="card-head">
           <h2>G-Drive</h2>
