@@ -213,16 +213,17 @@
   function headerKey(h) {
     const n = String(h || "").toLowerCase().replace(/\s+/g, " ").trim();
     if (!n) return null;
-    if (n === "status (%)" || n === "status(%)" || n === "status%") return "pct";
-    if (n === "date" || n === "by when") return "due";
-    if (n === "owner") return "owner";
-    if (n === "from whom") return "from";
-    if (n === "status") return "status";
-    if (n === "hard?" || n === "hard") return "hard";
-    if (n === "task" || n === "things needed") return "title";
-    if (n === "why" || n === "notes") return "why";
-    if (n === "id") return "id";
-    if (n === "region") return "region";
+    if (n === "status (%)" || n === "status(%)" || n === "status%" ||
+        n.startsWith("status (%)") || n.startsWith("status(%)") || n.startsWith("status%")) return "pct";
+    if (n === "date" || n.startsWith("date ") || n === "by when" || n.startsWith("by when ")) return "due";
+    if (n === "owner" || n.startsWith("owner ")) return "owner";
+    if (n === "from whom" || n.startsWith("from whom ")) return "from";
+    if (n === "status" || n.startsWith("status ")) return "status";
+    if (n === "hard?" || n === "hard" || n.startsWith("hard?") || n.startsWith("hard ")) return "hard";
+    if (n === "task" || n.startsWith("task ") || n === "things needed" || n.startsWith("things needed ")) return "title";
+    if (n === "why" || n.startsWith("why ") || n === "notes" || n.startsWith("notes ")) return "why";
+    if (n === "id" || n.startsWith("id ")) return "id";
+    if (n === "region" || n.startsWith("region ")) return "region";
     return n;
   }
   function cellVal(c) {
@@ -249,6 +250,10 @@
   }
   function sheetPct(v) {
     if (v == null || v === "") return 0;
+    if (typeof v === "number") {
+      if (v >= 0 && v <= 1) return Math.round(v * 100);
+      return Math.max(0, Math.min(100, Math.round(v)));
+    }
     const n = parseFloat(String(v).replace("%", "").trim());
     if (isNaN(n)) return 0;
     return Math.max(0, Math.min(100, Math.round(n)));
@@ -272,11 +277,22 @@
   }
   function tableRows(table) {
     const rows = (table && table.rows) || [];
-    if (!rows.length) return [];
-    const keys = (rows[0].c || []).map(c => headerKey(cellVal(c)));
+    let keys = ((table && table.cols) || []).map(col => headerKey(col && col.label));
+    let start = 0;
+    if (keys.indexOf("title") < 0) {
+      for (let i = 0; i < Math.min(rows.length, 8); i++) {
+        const candidate = ((rows[i] && rows[i].c) || []).map(c => headerKey(cellVal(c)));
+        if (candidate.indexOf("title") >= 0) {
+          keys = candidate;
+          start = i + 1;
+          break;
+        }
+      }
+    }
+    if (keys.indexOf("title") < 0) return [];
     const out = [];
-    for (let i = 1; i < rows.length; i++) {
-      const cells = rows[i].c || [];
+    for (let i = start; i < rows.length; i++) {
+      const cells = (rows[i] && rows[i].c) || [];
       const obj = {};
       let empty = true;
       keys.forEach((k, j) => {
@@ -316,7 +332,7 @@
         reject(new Error("Could not reach Google Sheets."));
       };
       script.src = "https://docs.google.com/spreadsheets/d/" + PLAN.fileId +
-        "/gviz/tq?tqx=responseHandler:" + cb + "&sheet=" + encodeURIComponent(sheetName);
+        "/gviz/tq?tqx=responseHandler:" + cb + "&headers=1&sheet=" + encodeURIComponent(sheetName);
       document.head.appendChild(script);
     });
   }
