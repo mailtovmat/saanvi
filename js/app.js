@@ -27,7 +27,7 @@
     tasksSheet: "Tasks",
     docsSheet: "Documents Needed",
     cacheKey: "saanvi.plan.v1",
-    driveCacheKey: "saanvi.gdrive.v1",
+    driveCacheKey: "saanvi.gdrive.v2",
     driveRoot: "1oOyuDasMra4G_DoRRc6lDLAOOM_MS8dR",
     driveHref: "https://drive.google.com/drive/folders/1oOyuDasMra4G_DoRRc6lDLAOOM_MS8dR"
   };
@@ -407,7 +407,12 @@
     } catch (e) { /* private mode / quota */ }
   }
   function applyDrive(payload) {
-    if (payload && Array.isArray(payload.tree)) state.gdrive = payload;
+    if (!payload || !Array.isArray(payload.tree)) return;
+    const incoming = countDriveFiles(payload.tree);
+    const current = state.gdrive || ((typeof GDRIVE !== "undefined") ? GDRIVE : null);
+    const have = current ? countDriveFiles(current.tree) : 0;
+    if (incoming === 0 && have > 0) return;
+    state.gdrive = payload;
   }
   function loadDriveCache() {
     try {
@@ -416,6 +421,7 @@
       const c = JSON.parse(raw);
       if (!c || !Array.isArray(c.tree)) return;
       const shipped = (typeof GDRIVE !== "undefined") ? GDRIVE : null;
+      if (shipped && countDriveFiles(shipped.tree) > 0 && countDriveFiles(c.tree) === 0) return;
       if (shipped && shipped.fetchedIso && (!c.fetchedIso || c.fetchedIso < shipped.fetchedIso)) return;
       applyDrive(c);
     } catch (e) { /* keep shipped gdrive-data.js */ }
@@ -565,7 +571,7 @@
       ]);
       if (driveRes.status === "fulfilled" && driveRes.value && Array.isArray(driveRes.value.tree)) {
         applyDrive(driveRes.value);
-        saveDriveCache(driveRes.value);
+        if (countDriveFiles(driveRes.value.tree) > 0) saveDriveCache(driveRes.value);
       }
       if (taskRes.status !== "fulfilled" || docRes.status !== "fulfilled") {
         throw new Error((taskRes.reason && taskRes.reason.message) ||
@@ -1225,7 +1231,11 @@
   }
 
   function renderGdrive() {
-    const G = state.gdrive || ((typeof GDRIVE !== "undefined") ? GDRIVE : {tree:[], fileCount:0, fetched:"—", rootHref:PLAN.driveHref, rootName:"Saanvi"});
+    const shipped = (typeof GDRIVE !== "undefined") ? GDRIVE : null;
+    const live = state.gdrive;
+    const G = (live && countDriveFiles(live.tree) > 0) ? live
+      : (shipped && countDriveFiles(shipped.tree) > 0) ? shipped
+      : (live || shipped || {tree:[], fileCount:0, fetched:"—", rootHref:PLAN.driveHref, rootName:"Saanvi"});
     return `<div class="stack">
       <div class="note">Listing of the Saanvi Google Drive vault. Markdown notes are hidden, so deleting a .md file will not change this list. Refresh re-reads the folder. Updated ${esc(G.fetched)}. <a href="${esc(G.rootHref || PLAN.driveHref)}" target="_blank" rel="noopener noreferrer">Open the folder in Drive</a>.</div>
       <div class="card">
